@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<body style="background:#000; color:#0f0; font-family:monospace; padding:10px;">
+    <h3 style="color:#fff;">X200 DIESEL FULL DASHBOARD</h3>
+    <button onclick="startDash()" style="padding:15px; width:100%; background:#050; color:#fff; border:none; cursor:pointer; font-weight:bold;">CONNECT & START STREAM</button>
+    <div id="log" style="white-space:pre-wrap; margin-top:15px; border-top:1px solid #333; height:80vh; overflow-y:auto; font-size:12px;"></div>
+
+    <script>
+        async function startDash() {
+            const logEl = document.getElementById('log');
+            const log = (m) => { logEl.innerText += `> ${m}\n`; logEl.scrollTop = logEl.scrollHeight; };
+            let port;
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 38400 });
+                const writer = port.writable.getWriter();
+                const reader = port.readable.getReader();
+                const enc = new TextEncoder();
+                const dec = new TextDecoder();
+
+                // Core Setup
+                const init = ["ATZ\r", "ATE0\r", "ATSP6\r", "ATSH7E0\r", "1003\r"];
+                // Full Sensor List
+                const sensors = ["22119C1\r","2211931\r","22114F1\r","2211211\r","22110B1\r","22110F1\r","2211101\r","2211051\r","22110C1\r","21421\r"];
+
+                for (let c of init) {
+                    await writer.write(enc.encode(c));
+                    await new Promise(r => setTimeout(r, 500));
+                }
+                log("INITIALIZATION COMPLETE. STARTING DATA STREAM...");
+
+                // Continuous Loop
+                while (true) {
+                    for (let s of sensors) {
+                        await writer.write(enc.encode(s));
+                        let res = "";
+                        const timeout = Date.now() + 1000;
+                        while (Date.now() < timeout && !res.includes(">")) {
+                            const { value } = await reader.read();
+                            res += dec.decode(value);
+                        }
+                        log(`${s.trim()} : ${res.replace(/>/g, "").trim()}`);
+                        await writer.write(enc.encode("3E80\r")); // Session Heartbeat
+                    }
+                }
+            } catch (e) { log("STOPPED: " + e.message); }
+            finally { if (port) await port.close(); }
+        }
+    </script>
+</body>
+</html>
